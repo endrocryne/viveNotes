@@ -10,7 +10,6 @@ import androidx.credentials.exceptions.GetCredentialCancellationException
 import androidx.credentials.exceptions.GetCredentialException
 import androidx.credentials.exceptions.GetCredentialProviderConfigurationException
 import androidx.credentials.exceptions.GetCredentialUnsupportedException
-import androidx.credentials.exceptions.NoCredentialException
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.android.libraries.identity.googleid.GoogleIdTokenParsingException
@@ -91,16 +90,15 @@ class GoogleIdentityProvider(
             getCredential(activityContext, request)
         } catch (dismissed: GetCredentialCancellationException) {
             return GoogleIdToken.Dismissed
-        } catch (none: NoCredentialException) {
-            // No Google account on the device, or none the user was willing to use. Distinct from
-            // a dismissal because it names something to go and do.
-            return refused(none, ConnectFailure.NoGoogleAccount)
         } catch (missing: GetCredentialProviderConfigurationException) {
             // No provider answered: a device without Play services, or the dependency missing.
             return refused(missing, ConnectFailure.GoogleNotConfigured)
         } catch (unsupported: GetCredentialUnsupportedException) {
             return refused(unsupported, ConnectFailure.GoogleNotConfigured)
         } catch (failed: GetCredentialException) {
+            if (failed.type == "androidx.credentials.TYPE_NO_CREDENTIAL") {
+                return refused(failed, ConnectFailure.NoGoogleAccount)
+            }
             // Interrupted, unknown, or a provider-specific failure. Nothing was sent anywhere, so
             // this is the same instruction as the others: it did not work, try again.
             return refused(failed, ConnectFailure.GoogleNotConfigured)
