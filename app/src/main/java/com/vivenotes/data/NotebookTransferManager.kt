@@ -1428,6 +1428,7 @@ class NotebookTransferManager(
             MIME_TYPE,
             "application/octet-stream",
             "application/zip",
+            "*/*",
         )
 
         /** `HierarchySync.SyncKind.Notebook.wire`, which is private to it. */

@@ -768,6 +768,7 @@ private fun NotesWorkspace(
     val deletedItems by viewModel.deletedItems.collectAsStateWithLifecycle()
     val notebookTransfer by viewModel.notebookTransfer.collectAsStateWithLifecycle()
     val reveal by viewModel.reveal.collectAsStateWithLifecycle()
+    val context = LocalContext.current
 
     // The system photo picker. Chosen over `GetContent` and over `READ_MEDIA_IMAGES`
     // deliberately: it needs **no runtime permission at all**, because the user picking a file *is*
@@ -793,11 +794,20 @@ private fun NotesWorkspace(
     ) { uri -> uri?.let(viewModel::exportCurrentNotebook) }
     val importNotebook = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
-    ) { uri -> uri?.let(viewModel::importNotebook) }
+    ) { uri ->
+        uri?.let {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    it,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                )
+            }
+            viewModel.importNotebook(it)
+        }
+    }
     val strokes by viewModel.strokes.collectAsStateWithLifecycle()
     val inkReadyPageId by viewModel.inkReadyPageId.collectAsStateWithLifecycle()
     val aiModels by aiModelStore.state.collectAsStateWithLifecycle()
-    val context = LocalContext.current
     val resources = LocalResources.current
     val focusManager = LocalFocusManager.current
     val recognitionScope = rememberCoroutineScope()

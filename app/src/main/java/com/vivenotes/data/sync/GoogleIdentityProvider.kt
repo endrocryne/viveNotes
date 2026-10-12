@@ -11,6 +11,7 @@ import androidx.credentials.exceptions.GetCredentialException
 import androidx.credentials.exceptions.GetCredentialProviderConfigurationException
 import androidx.credentials.exceptions.GetCredentialUnsupportedException
 import androidx.credentials.exceptions.NoCredentialException
+import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.android.libraries.identity.googleid.GoogleIdTokenParsingException
@@ -79,7 +80,25 @@ class GoogleIdentityProvider(
     suspend fun requestIdToken(activityContext: Context, nonce: String): GoogleIdToken {
         if (!configured) return GoogleIdToken.Rejected(ConnectFailure.GoogleNotConfigured)
 
-        val request = GetCredentialRequest.Builder()
+        val first = requestCredential(activityContext, signInWithGoogleRequest(nonce))
+        val response = when (first) {
+            is CredentialRequestResult.Success -> first.response
+            CredentialRequestResult.Cancelled -> return GoogleIdToken.Dismissed
+            is CredentialRequestResult.Failed -> {
+                val fallback = requestCredential(activityContext, googleIdRequest(nonce))
+                when (fallback) {
+                    is CredentialRequestResult.Success -> fallback.response
+                    CredentialRequestResult.Cancelled -> return GoogleIdToken.Dismissed
+                    is CredentialRequestResult.Failed -> return mapFailure(fallback.cause)
+                }
+            }
+        }
+
+        return parseCredential(response)
+    }
+
+    private fun signInWithGoogleRequest(nonce: String): GetCredentialRequest =
+        GetCredentialRequest.Builder()
             .addCredentialOption(
                 GetSignInWithGoogleOption.Builder(serverClientId)
                     .setNonce(nonce)
@@ -87,25 +106,32 @@ class GoogleIdentityProvider(
             )
             .build()
 
-        val response = try {
-            getCredential(activityContext, request)
+    private fun googleIdRequest(nonce: String): GetCredentialRequest =
+        GetCredentialRequest.Builder()
+            .addCredentialOption(
+                GetGoogleIdOption.Builder()
+                    .setServerClientId(serverClientId)
+                    .setNonce(nonce)
+                    // Includes non-authorized accounts as a fallback path on devices where
+                    // Sign in with Google does not return a credential.
+                    .setFilterByAuthorizedAccounts(false)
+                    .build(),
+            )
+            .build()
+
+    private suspend fun requestCredential(
+        activityContext: Context,
+        request: GetCredentialRequest,
+    ): CredentialRequestResult =
+        try {
+            CredentialRequestResult.Success(getCredential(activityContext, request))
         } catch (dismissed: GetCredentialCancellationException) {
-            return GoogleIdToken.Dismissed
-        } catch (none: NoCredentialException) {
-            // No Google account on the device, or none the user was willing to use. Distinct from
-            // a dismissal because it names something to go and do.
-            return refused(none, ConnectFailure.NoGoogleAccount)
-        } catch (missing: GetCredentialProviderConfigurationException) {
-            // No provider answered: a device without Play services, or the dependency missing.
-            return refused(missing, ConnectFailure.GoogleNotConfigured)
-        } catch (unsupported: GetCredentialUnsupportedException) {
-            return refused(unsupported, ConnectFailure.GoogleNotConfigured)
+            CredentialRequestResult.Cancelled
         } catch (failed: GetCredentialException) {
-            // Interrupted, unknown, or a provider-specific failure. Nothing was sent anywhere, so
-            // this is the same instruction as the others: it did not work, try again.
-            return refused(failed, ConnectFailure.GoogleNotConfigured)
+            CredentialRequestResult.Failed(failed)
         }
 
+    private fun parseCredential(response: GetCredentialResponse): GoogleIdToken {
         val credential = response.credential
         // Two type constants, because `GetSignInWithGoogleOption` returns the SIWG subtype while
         // `GetGoogleIdOption` returns the plain one. Matching on both keeps this correct if the
@@ -128,6 +154,20 @@ class GoogleIdentityProvider(
         }
     }
 
+    private fun mapFailure(cause: GetCredentialException): GoogleIdToken = when (cause) {
+        is NoCredentialException ->
+            // No Google account on the device, or none the user was willing to use. Distinct from
+            // a dismissal because it names something to go and do.
+            refused(cause, ConnectFailure.NoGoogleAccount)
+        is GetCredentialProviderConfigurationException ->
+            // No provider answered: a device without Play services, or the dependency missing.
+            refused(cause, ConnectFailure.GoogleNotConfigured)
+        is GetCredentialUnsupportedException -> refused(cause, ConnectFailure.GoogleNotConfigured)
+        // Interrupted, unknown, or a provider-specific failure. Nothing was sent anywhere, so this
+        // is the same instruction as the others: it did not work, try again.
+        else -> refused(cause, ConnectFailure.GoogleNotConfigured)
+    }
+
     /**
      * The screen can only say "not configured", which is the same sentence for a stale Play
      * services and for a signing certificate missing from the Cloud project. The exception's type
@@ -139,4 +179,10 @@ class GoogleIdentityProvider(
     private companion object {
         const val TAG = "GoogleIdentity"
     }
+}
+
+private sealed interface CredentialRequestResult {
+    data class Success(val response: GetCredentialResponse) : CredentialRequestResult
+    data class Failed(val cause: GetCredentialException) : CredentialRequestResult
+    data object Cancelled : CredentialRequestResult
 }
