@@ -858,6 +858,12 @@ private fun handleInk(
 ): Boolean {
     val index = event.actionIndex
     val toolType = event.getToolType(index)
+    val secondaryMouseButton =
+        toolType == MotionEvent.TOOL_TYPE_MOUSE &&
+            (
+                event.actionButton == MotionEvent.BUTTON_SECONDARY ||
+                    event.buttonState and MotionEvent.BUTTON_SECONDARY != 0
+                )
     // Both count as "a pointer with no pen behind it", which is what the finger setting is about.
     // A mouse is here for the emulator, though not because the emulator reports one: on the
     // `Medium_Tablet` AVD `dumpsys input` lists only `virtio_input_multi_touch` devices, so a host
@@ -865,6 +871,12 @@ private fun handleInk(
     // answer is the same.
     val isDirectTouch = toolType == MotionEvent.TOOL_TYPE_FINGER ||
         toolType == MotionEvent.TOOL_TYPE_MOUSE
+
+    // On desktop mouse input, secondary click is always navigation, never inking. Without this a
+    // right-drag while a draw tool is armed writes marks instead of panning.
+    if (secondaryMouseButton) {
+        return panPage(event, pan, velocity, panning, lastPan, setPanning)
+    }
 
     // Lasso follows the same finger setting as ink and the eraser: stylus always selects, while a
     // disallowed finger moves the page. It used to claim every finger drag even in stylus-only

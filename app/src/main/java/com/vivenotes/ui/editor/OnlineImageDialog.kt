@@ -1,5 +1,6 @@
 package com.vivenotes.ui.editor
 
+import android.view.MotionEvent
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -53,6 +54,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -388,6 +390,18 @@ private fun ResultTile(
             .aspectRatio(ratio)
             .clip(MaterialTheme.shapes.large)
             .background(MaterialTheme.colorScheme.surfaceVariant)
+            .pointerInteropFilter { event ->
+                if (
+                    enabled &&
+                    event.actionMasked == MotionEvent.ACTION_BUTTON_PRESS &&
+                    event.actionButton == MotionEvent.BUTTON_SECONDARY
+                ) {
+                    onPick()
+                    true
+                } else {
+                    false
+                }
+            }
             .clickable(enabled = enabled, onClickLabel = stringResource(R.string.online_image_insert), role = Role.Button, onClick = onPick)
             .semantics { contentDescription = description }
             .testTag(OnlineImageTags.RESULT),
